@@ -12,6 +12,15 @@ app.get('/', (req, res) => {
   res.send('✅ Mini Aimer Bot đang chạy!');
 });
 
+// ========== XÁC THỰC DOMAIN ZALO ==========
+// Tự động trả về đúng nội dung cho bất kỳ file xác thực nào Zalo yêu cầu
+app.get('/zalo*', (req, res) => {
+  const filename = req.path.replace('/', '');
+  const content  = filename.replace('.html', '');
+  console.log('✅ Zalo verify request:', filename);
+  res.send(content);
+});
+
 // Nhận code OAuth từ Zalo
 app.get('/callback', (req, res) => {
   const code = req.query.code;
@@ -55,11 +64,9 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`👤 Khách nhắn: ${userMsg}`);
 
-    // Nếu khách nhấn nút "Nhận quà ngay" (gửi text này)
     if (userMsg === 'Nhận quà ngay' || userMsg === 'nhan qua ngay' || userMsg === '🎁 Nhận quà ngay') {
       await sendGiftMessage(userId);
     } else {
-      // Các tin nhắn khác → gọi AI trả lời
       const reply = await getAIReply(userMsg);
       await sendZaloMessage(userId, reply);
     }
