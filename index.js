@@ -12,20 +12,19 @@ app.get('/', (req, res) => {
 });
 
 // ========== XÁC THỰC DOMAIN ZALO ==========
-// Bắt TẤT CẢ các request GET — kiểm tra nếu là file xác thực Zalo
-app.use((req, res, next) => {
-  const path = req.path;
-  
-  // Nếu URL chứa "zalo" hoặc kết thúc bằng .html → trả về nội dung xác thực
-  if (path.toLowerCase().includes('zalo') && path.endsWith('.html')) {
-    const filename = path.replace('/', ''); // bỏ dấu /
-    const content  = filename.replace('.html', ''); // bỏ .html
-    console.log('✅ Zalo verify:', path, '→', content);
-    res.setHeader('Content-Type', 'text/html');
-    return res.send(content);
-  }
-  
-  next();
+// Trả về đúng file HTML mà Zalo yêu cầu
+app.get('/zalo_verifierQT-aD9JVB1zpyFuvkCKlDZFXfJdVbt1lDZGr.html', (req, res) => {
+  console.log('✅ Zalo verify request nhận được!');
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta property="zalo-platform-site-verification" content="QT-aD9JVB1zpyFuvkCKlDZFXfJdVbt1lDZGr" />
+</head>
+<body>
+There Is No Limit To What You Can Accomplish Using Zalo!
+</body>
+</html>`);
 });
 
 // Nhận code OAuth từ Zalo
