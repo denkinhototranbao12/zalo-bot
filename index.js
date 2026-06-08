@@ -3,8 +3,8 @@ const app = express();
 app.use(express.json());
 
 // ========== CẤU HÌNH ==========
-const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || 'sk-ant-XXXXX';
-const ZALO_TOKEN    = process.env.ZALO_TOKEN    || '';
+const GEMINI_KEY = process.env.GEMINI_KEY || '';
+const ZALO_TOKEN = process.env.ZALO_TOKEN || '';
 
 // Kiểm tra bot đang chạy
 app.get('/', (req, res) => {
@@ -12,18 +12,15 @@ app.get('/', (req, res) => {
 });
 
 // ========== XÁC THỰC DOMAIN ZALO ==========
-// Trả về đúng file HTML mà Zalo yêu cầu
 app.get('/zalo_verifierQT-aD9JVB1zpyFuvkCKlDZFXfJdVbt1lDZGr.html', (req, res) => {
-  console.log('✅ Zalo verify request nhận được!');
+  console.log('✅ Zalo verify request!');
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta property="zalo-platform-site-verification" content="QT-aD9JVB1zpyFuvkCKlDZFXfJdVbt1lDZGr" />
 </head>
-<body>
-There Is No Limit To What You Can Accomplish Using Zalo!
-</body>
+<body>There Is No Limit To What You Can Accomplish Using Zalo!</body>
 </html>`);
 });
 
@@ -32,7 +29,7 @@ app.get('/callback', (req, res) => {
   const code = req.query.code;
   if (code) {
     console.log('✅ ZALO CODE:', code);
-    res.send(`<h2>✅ Lấy code thành công!</h2><p>Code: <b>${code}</b></p>`);
+    res.send(`<h2>✅ Lấy code thành công!</h2><p>Code: <b>${code}</b></p><p>Copy code này lại nhé!</p>`);
   } else {
     res.send('<h2>❌ Không có code!</h2>');
   }
@@ -44,32 +41,40 @@ app.post('/webhook', async (req, res) => {
   const event = req.body;
   console.log('📩 Webhook:', JSON.stringify(event));
 
+  // Khách follow OA → gửi tin chào + nút nhận quà
   if (event.event_name === 'follow') {
     const userId   = event.follower.id;
     const userName = event.follower.display_name || 'bạn';
+    console.log(`🎉 Khách mới follow: ${userName}`);
     await sendWelcomeMessage(userId, userName);
   }
 
+  // Khách gửi tin nhắn text
   if (event.event_name === 'user_send_text') {
     const userId  = event.sender.id;
     const userMsg = event.message.text.trim();
+    console.log(`👤 Khách nhắn: ${userMsg}`);
+
     if (userMsg === 'Nhận quà ngay' || userMsg === '🎁 Nhận quà ngay') {
       await sendGiftMessage(userId);
     } else {
-      const reply = await getAIReply(userMsg);
+      const reply = await getGeminiReply(userMsg);
       await sendZaloMessage(userId, reply);
     }
   }
 
+  // Khách nhấn nút
   if (event.event_name === 'user_send_button') {
     const userId  = event.sender.id;
     const payload = event.message.payload || '';
+    console.log(`🔘 Khách nhấn nút: ${payload}`);
     if (payload === 'NHAN_QUA_NGAY') {
       await sendGiftMessage(userId);
     }
   }
 });
 
+// ========== GỬI TIN CHÀO MỪNG + NÚT NHẬN QUÀ ==========
 async function sendWelcomeMessage(userId, userName) {
   try {
     const body = {
@@ -85,15 +90,16 @@ async function sendWelcomeMessage(userId, userName) {
         }
       }
     };
-    const response = await fetch('https://openapi.zalo.me/v3.0/oa/message/cs', {
+    const res = await fetch('https://openapi.zalo.me/v3.0/oa/message/cs', {
       method: 'POST',
       headers: { 'access_token': ZALO_TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    console.log('📤 Chào mừng:', await response.json());
+    console.log('📤 Chào mừng:', await res.json());
   } catch (e) { console.error('❌ Lỗi chào:', e); }
 }
 
+// ========== GỬI TIN NHẮN QUÀ TẶNG ==========
 async function sendGiftMessage(userId) {
   const giftText =
     '🎉 Chúc mừng bạn!\n\n' +
@@ -103,40 +109,51 @@ async function sendGiftMessage(userId) {
   await sendZaloMessage(userId, giftText);
 }
 
-async function getAIReply(userMessage) {
+// ========== HÀM GỌI GEMINI AI ==========
+async function getGeminiReply(userMessage) {
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
+    
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        system: `Bạn là trợ lý tư vấn của Mini Aimer - shop mẹ và bé uy tín tại Việt Nam.
-Trả lời ngắn gọn, thân thiện bằng tiếng Việt.
-Sản phẩm: sữa công thức, tã bỉm, đồ chơi, quần áo trẻ em, phụ kiện mẹ bầu.
-Nếu khách hỏi giá hoặc đặt hàng: "Bạn để lại số điện thoại, nhân viên Mini Aimer tư vấn ngay nhé! 💕"`,
-        messages: [{ role: 'user', content: userMessage }]
+        system_instruction: {
+          parts: [{
+            text: `Bạn là trợ lý tư vấn của Mini Aimer - shop mẹ và bé uy tín tại Việt Nam.
+Trả lời ngắn gọn, thân thiện, nhiệt tình bằng tiếng Việt.
+Sản phẩm: sữa công thức, tã bỉm, đồ chơi trẻ em, quần áo trẻ em, phụ kiện mẹ bầu.
+Nếu khách hỏi giá hoặc đặt hàng: "Bạn để lại số điện thoại, nhân viên Mini Aimer tư vấn ngay nhé! 💕"
+Nếu không biết: "Bạn để lại số điện thoại, nhân viên sẽ hỗ trợ ngay nhé! 💕"`
+          }]
+        },
+        contents: [{
+          parts: [{ text: userMessage }]
+        }]
       })
     });
+
     const data = await response.json();
-    return data.content?.[0]?.text || 'Bạn để lại số điện thoại, nhân viên sẽ hỗ trợ ngay nhé! 💕';
+    console.log('🤖 Gemini response:', JSON.stringify(data));
+    
+    return data.candidates?.[0]?.content?.parts?.[0]?.text
+      || 'Bạn để lại số điện thoại, nhân viên Mini Aimer sẽ hỗ trợ ngay nhé! 💕';
+
   } catch (e) {
+    console.error('❌ Gemini Error:', e);
     return 'Xin lỗi bạn! Bạn để lại số điện thoại, nhân viên liên hệ ngay nhé! 💕';
   }
 }
 
+// ========== HÀM GỬI TIN NHẮN ZALO ==========
 async function sendZaloMessage(userId, text) {
   try {
-    const response = await fetch('https://openapi.zalo.me/v3.0/oa/message/cs', {
+    const res = await fetch('https://openapi.zalo.me/v3.0/oa/message/cs', {
       method: 'POST',
       headers: { 'access_token': ZALO_TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify({ recipient: { user_id: userId }, message: { text } })
     });
-    console.log('📤 Gửi tin:', await response.json());
+    console.log('📤 Gửi tin:', await res.json());
   } catch (e) { console.error('❌ Lỗi gửi:', e); }
 }
 
